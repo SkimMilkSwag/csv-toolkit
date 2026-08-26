@@ -1,0 +1,16 @@
+[project]
+name = "csv-toolkit"
+version = "0.1.0"
+description = "Small pandas-based CSV cleaning and analysis toolkit."
+requires-python = ">=3.8"
+dependencies = ["pandas>=1.5"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+csvtool = "csvtool.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["csvtool*"]
