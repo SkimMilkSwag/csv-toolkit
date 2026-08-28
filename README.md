@@ -15,13 +15,17 @@ pip install -e .
 ```bash
 csvtool summary data.csv
 csvtool summary data.csv --max-null-frac 0.3
+
+# Per-column type inference, null rate, and cardinality
+csvtool profile data.csv
+csvtool profile data.csv --coerce   # coerce numeric strings before inferring
 ```
 
 ## Usage (library)
 
 ```python
 from csvtool.clean import load, drop_null_rows, coerce_numbers
-from csvtool.stats import summary, top_categories
+from csvtool.stats import summary, top_categories, profile
 
 df = load("data.csv")
 df = coerce_numbers(drop_null_rows(df))
