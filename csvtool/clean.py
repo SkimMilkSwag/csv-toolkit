@@ -8,9 +8,9 @@ def load(path: str, **kw) -> pd.DataFrame:
 
 
 def drop_null_rows(df: pd.DataFrame, threshold: float = 0.5) -> pd.DataFrame:
-    """Drop rows where more than `threshold` fraction of values are null."""
+    """Drop rows where at least `threshold` fraction of values are null."""
     null_frac = df.isnull().mean(axis=1)
-    return df[null_frac <= threshold].reset_index(drop=True)
+    return df[null_frac < threshold].reset_index(drop=True)
 
 
 def coerce_numbers(df: pd.DataFrame, cols=None):
