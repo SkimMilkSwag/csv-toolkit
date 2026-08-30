@@ -2,8 +2,8 @@ import os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 import pandas as pd
-from csvtool.clean import drop_null_rows, coerce_numbers, dedupe
-from csvtool.stats import profile, infer_type
+from csvtool.clean import drop_null_rows, coerce_numbers, dedupe, sample
+from csvtool.stats import profile, infer_type, summary
 
 
 def test_drop_null_rows():
@@ -79,3 +79,39 @@ def test_dedupe():
     df = pd.DataFrame({"x": [1, 1, 2], "y": ["a", "a", "b"]})
     out = dedupe(df)
     assert len(out) == 2
+
+
+def test_sample_size_and_reproducible():
+    df = pd.DataFrame({"v": range(100)})
+    out = sample(df, 5)
+    assert len(out) == 5
+    assert list(out.index) == list(range(5))  # index reset
+    assert (sample(df, 5) == out).all().all()  # same seed -> same rows
+    other = sample(df, 5, seed=42)
+    assert not (other == out).all().all()      # different seed -> different rows
+
+
+def test_sample_smaller_df_returns_all():
+    df = pd.DataFrame({"v": [1, 2, 3]})
+    out = sample(df, 10)
+    assert len(out) == 3 and list(out.index) == [0, 1, 2]
+
+
+def test_summary_cli_sample(tmp_path, capsys):
+    import json as _json
+    from csvtool.cli import main
+    f = tmp_path / "big.csv"
+    f.write_text("id,value\n" + "\n".join(f"{i},{i * 2}" for i in range(100)) + "\n")
+    main(["summary", str(f)])
+    full = _json.loads(capsys.readouterr().out)
+    assert full["id"]["nulls"] == 0 and full["id"]["max"] == 99.0
+
+    # --sample 5 must summarize only the reproducible seed-0 draw of 5 rows:
+    # sample() uses df.sample(n, random_state=seed), so the exact rows are
+    # knowable and the summary's max id pins the draw.
+    import pandas as _pd
+    idx = _pd.DataFrame({"id": range(100)}).sample(5, random_state=0)["id"].sort_values()
+    main(["summary", str(f), "--sample", "5"])
+    s = _json.loads(capsys.readouterr().out)
+    assert int(s["id"]["max"]) == int(idx.max())
+    assert abs(s["value"]["mean"] - 2 * idx.mean()) < 1e-4

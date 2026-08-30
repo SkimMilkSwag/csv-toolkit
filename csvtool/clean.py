@@ -7,6 +7,18 @@ def load(path: str, **kw) -> pd.DataFrame:
     return pd.read_csv(path, **kw)
 
 
+def sample(df: pd.DataFrame, n: int, seed: int = 0) -> pd.DataFrame:
+    """Return an i.i.d. row sample of at most `n` rows (the whole df if smaller).
+
+    The sample is reproducible for a given `seed`, and the index is reset so
+    downstream stats don't carry sampling artifacts.
+    """
+    if len(df) <= n:
+        return df.reset_index(drop=True)
+    out = df.sample(n, random_state=seed).sort_index()
+    return out.reset_index(drop=True)
+
+
 def drop_null_rows(df: pd.DataFrame, threshold: float = 0.5) -> pd.DataFrame:
     """Drop rows where at least `threshold` fraction of values are null."""
     null_frac = df.isnull().mean(axis=1)

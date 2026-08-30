@@ -2,7 +2,7 @@
 import argparse
 import json
 
-from .clean import load, drop_null_rows, coerce_numbers
+from .clean import load, drop_null_rows, coerce_numbers, sample
 from .stats import summary, profile
 
 
@@ -13,6 +13,8 @@ def main(argv=None):
     s = sub.add_parser("summary", help="print a compact column summary as JSON")
     s.add_argument("file")
     s.add_argument("--max-null-frac", type=float, default=0.5)
+    s.add_argument("--sample", type=int, default=None, metavar="N",
+                   help="summarize an i.i.d. sample of N rows instead of the full file (for large files)")
 
     pr = sub.add_parser("profile", help="per-column type inference + null rate + cardinality")
     pr.add_argument("file")
@@ -21,6 +23,8 @@ def main(argv=None):
     args = p.parse_args(argv)
     if args.cmd == "summary":
         df = load(args.file)
+        if args.sample is not None:
+            df = sample(df, args.sample)
         df = drop_null_rows(df, args.max_null_frac)
         print(json.dumps(summary(df), indent=2))
     elif args.cmd == "profile":
