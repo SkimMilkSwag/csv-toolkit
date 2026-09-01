@@ -97,6 +97,28 @@ def test_sample_smaller_df_returns_all():
     assert len(out) == 3 and list(out.index) == [0, 1, 2]
 
 
+def test_load_from_stdin(monkeypatch):
+    import io
+    from csvtool.clean import load
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("id,note\n1,hi\n2,lo\n"))
+    df = load("-")
+    assert list(df.columns) == ["id", "note"]
+    assert len(df) == 2
+    assert df["id"].tolist() == [1, 2]
+
+
+def test_load_stdin_via_cli(tmp_path, capsys, monkeypatch):
+    import io
+    import json as _json
+    from csvtool.cli import main
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("id,value\n1,10\n2,20\n3,30\n"))
+    main(["summary", "-"])
+    out = _json.loads(capsys.readouterr().out)
+    assert out["id"]["nulls"] == 0 and out["value"]["max"] == 30.0
+
+
 def test_summary_cli_sample(tmp_path, capsys):
     import json as _json
     from csvtool.cli import main

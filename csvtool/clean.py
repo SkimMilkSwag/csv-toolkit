@@ -1,9 +1,19 @@
 """CSV cleaning helpers built on pandas."""
+import io
+import sys
+
 import pandas as pd
 
 
 def load(path: str, **kw) -> pd.DataFrame:
-    """Load a CSV file into a DataFrame with sensible defaults."""
+    """Load a CSV file into a DataFrame with sensible defaults.
+
+    ``path`` may be the string "-" to read from stdin (useful in pipelines,
+    e.g. ``zcat data.csv.zst | csvtool summary -``).
+    """
+    if path == "-":
+        text = sys.stdin.read()
+        return pd.read_csv(io.StringIO(text), **kw)
     return pd.read_csv(path, **kw)
 
 
