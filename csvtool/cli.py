@@ -3,7 +3,7 @@ import argparse
 import json
 
 from .clean import load, drop_null_rows, coerce_numbers, sample
-from .stats import summary, profile
+from .stats import summary, profile, flag_sparse_columns
 
 
 def main(argv=None):
@@ -20,6 +20,11 @@ def main(argv=None):
     pr.add_argument("file")
     pr.add_argument("--coerce", action="store_true", help="try to coerce numeric strings before inferring types")
 
+    fl = sub.add_parser("flag-nulls", help="flag columns above a null-rate threshold with drop/impute suggestions")
+    fl.add_argument("file")
+    fl.add_argument("--null-frac", type=float, default=0.5, metavar="FRAC",
+                    help="flag columns whose null rate exceeds this fraction (default 0.5)")
+
     args = p.parse_args(argv)
     if args.cmd == "summary":
         df = load(args.file)
@@ -32,6 +37,9 @@ def main(argv=None):
         if args.coerce:
             df = coerce_numbers(df)
         print(json.dumps(profile(df), indent=2))
+    elif args.cmd == "flag-nulls":
+        df = load(args.file)
+        print(json.dumps(flag_sparse_columns(df, args.null_frac), indent=2))
     else:
         p.print_help()
 

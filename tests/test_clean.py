@@ -3,7 +3,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 import pandas as pd
 from csvtool.clean import drop_null_rows, coerce_numbers, dedupe, sample
-from csvtool.stats import profile, infer_type, summary
+from csvtool.stats import profile, infer_type, summary, flag_sparse_columns
 
 
 def test_drop_null_rows():
@@ -137,3 +137,58 @@ def test_summary_cli_sample(tmp_path, capsys):
     s = _json.loads(capsys.readouterr().out)
     assert int(s["id"]["max"]) == int(idx.max())
     assert abs(s["value"]["mean"] - 2 * idx.mean()) < 1e-4
+
+
+def test_flag_sparse_columns_default_threshold():
+    # 10 rows; 'sparse' is null in 8 (0.8), 'borderline' in 6 (0.6) — both
+    # above the default 0.5 flag threshold AND majority-null, so both drop
+    df = pd.DataFrame({
+        "sparse": [None] * 8 + [1, 2],
+        "borderline": [None] * 6 + [1, 2, 3, 4],
+        "ok": [1, None, 3, 4, 5, 6, 7, 8, 9, 10],
+    })
+    flags = flag_sparse_columns(df)
+    assert [f["column"] for f in flags] == ["sparse", "borderline"]  # sorted by null rate
+    assert flags[0]["null_rate"] == 0.8 and flags[0]["suggestion"] == "drop"
+    assert flags[1]["null_rate"] == 0.6 and flags[1]["suggestion"] == "drop"
+
+    # 'soft' is 4 of 10 null (0.4): below the default threshold, not flagged;
+    # at a lower threshold it qualifies but is under 50% null -> impute
+    df2 = pd.concat(
+        [df, pd.DataFrame({"soft": [None] * 4 + list(range(6))})], axis=1
+    )
+    assert all(f["column"] != "soft" for f in flag_sparse_columns(df2))
+    soft = [f for f in flag_sparse_columns(df2, null_frac_threshold=0.3) if f["column"] == "soft"]
+    assert len(soft) == 1 and soft[0]["suggestion"] == "impute"
+
+
+def test_flag_sparse_columns_custom_threshold():
+    df = pd.DataFrame({
+        "a": [None, None, 1, 2],          # 0.5 nulls
+        "b": [None, None, None, 2],       # 0.75 nulls
+    })
+    # default 0.5: only 'b' exceeds the threshold (strictly greater); majority missing -> drop
+    out = flag_sparse_columns(df)
+    assert [f["column"] for f in out] == ["b"]
+    assert out[0]["suggestion"] == "drop"
+    # lower threshold to 0.25: both columns qualify; 'a' is exactly half null -> impute
+    out = flag_sparse_columns(df, null_frac_threshold=0.25)
+    assert [f["column"] for f in out] == ["b", "a"]  # still sorted by null rate
+    assert {f["suggestion"] for f in out} == {"drop", "impute"}
+
+
+def test_flag_sparse_columns_empty_df():
+    df = pd.DataFrame({"a": []})
+    assert flag_sparse_columns(df) == []
+
+
+def test_flag_nulls_cli(tmp_path, capsys):
+    import json as _json
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    # 'rare' is null in 3 of 4 rows (majority) -> drop; 'main' is never null
+    f.write_text("main,rare\n1,\n2,7\n3,\n4,\n")
+    main(["flag-nulls", str(f)])
+    out = _json.loads(capsys.readouterr().out)
+    assert [o["column"] for o in out] == ["rare"]
+    assert out[0]["null_rate"] == 0.75 and out[0]["suggestion"] == "drop"

@@ -63,3 +63,31 @@ def profile(df: pd.DataFrame) -> dict:
             "cardinality": int(s.nunique(dropna=True)),
         }
     return out
+
+
+def flag_sparse_columns(df: pd.DataFrame, null_frac_threshold: float = 0.5) -> list:
+    """Flag columns whose null rate exceeds ``null_frac_threshold``.
+
+    Returns a list of dicts (sorted by null rate, highest first) with the
+    column name, its null count/rate, and a suggested action: ``drop`` when
+    more than half the rows are null (the column carries little signal),
+    otherwise ``impute`` — worth filling rather than dropping.
+    """
+    n = len(df)
+    flags = []
+    for col in df.columns:
+        s = df[col]
+        nulls = int(s.isnull().sum())
+        rate = nulls / n if n else 0.0
+        if rate > null_frac_threshold:
+            action = "drop" if rate > 0.5 else "impute"
+            flags.append(
+                {
+                    "column": col,
+                    "nulls": nulls,
+                    "null_rate": round(rate, 4),
+                    "suggestion": action,
+                }
+            )
+    flags.sort(key=lambda f: f["null_rate"], reverse=True)
+    return flags

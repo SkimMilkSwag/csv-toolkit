@@ -19,6 +19,10 @@ csvtool summary data.csv --max-null-frac 0.3
 # Per-column type inference, null rate, and cardinality
 csvtool profile data.csv
 csvtool profile data.csv --coerce   # coerce numeric strings before inferring
+
+# Flag columns above a null-rate threshold (default 0.5) with drop/impute suggestions
+csvtool flag-nulls data.csv
+csvtool flag-nulls data.csv --null-frac 0.3
 ```
 
 ## Usage (library)
