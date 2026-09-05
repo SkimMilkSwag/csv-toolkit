@@ -14,3 +14,11 @@ csvtool = "csvtool.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["csvtool*"]
+
+# Sphinx-ready module docs (see the csvtool package docstring): autodoc can
+# pick up the :mod:/:func: cross-references directly from the docstrings.
+[project.optional-dependencies]
+docs = [
+    "sphinx>=7",
+    "sphinx-rtd-theme>=2",
+]

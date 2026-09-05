@@ -3,7 +3,13 @@ import pandas as pd
 
 
 def summary(df: pd.DataFrame) -> dict:
-    """Return a compact per-column summary (count, nulls, mean/min/max for numeric)."""
+    """Return a compact per-column summary (count, nulls, mean/min/max for numeric).
+
+    Every column gets ``nulls`` and its pandas ``dtype``; numeric columns
+    additionally get rounded ``mean``/``min``/``max`` (``None`` for an empty
+    frame). Output is JSON-serialisable — the CLI prints it with
+    ``json.dumps(..., indent=2)``.
+    """
     out = {}
     for col in df.columns:
         s = df[col]
@@ -17,7 +23,12 @@ def summary(df: pd.DataFrame) -> dict:
 
 
 def top_categories(df: pd.DataFrame, col: str, n: int = 5) -> list:
-    """Return the top-n most frequent categories in a column as (value, count)."""
+    """Return the top-n most frequent categories in a column as (value, count).
+
+    Ties are broken by pandas' ``value_counts`` ordering (first-seen among
+    equal counts). Useful for a quick look at a categorical column without
+    pulling up a notebook.
+    """
     return df[col].value_counts().head(n).reset_index().values.tolist()
 
 

@@ -43,6 +43,15 @@ print(top_categories(df, "category"))
 python -m pytest tests/ -v
 ```
 
+## Docs
+
+Module docstrings are Sphinx-ready; build the API reference with:
+
+```bash
+pip install -e .[docs]
+sphinx-build docs docs/_build/html
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
