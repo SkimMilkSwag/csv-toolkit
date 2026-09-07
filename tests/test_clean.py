@@ -18,6 +18,25 @@ def test_drop_null_rows_boundary():
     assert len(drop_null_rows(df, threshold=1.0)) == 2
 
 
+def test_drop_null_rows_exactly_at_threshold_is_dropped():
+    # drop_null_rows drops a row when its null fraction MEETS the threshold
+    # (null_frac < threshold keeps the row), so at threshold 0.5 any row that
+    # is exactly half-null goes away, while a fully-populated row survives.
+    df = pd.DataFrame({"a": [1, None, 3], "b": [None, None, 9]})
+    # row1 (1, None) -> 0.5 null frac; row2 (None, None) -> 1.0; row3 (3, 9) -> 0.0
+    assert list(drop_null_rows(df, threshold=0.5).itertuples(index=False)) == [(3, 9)]
+    # one step below the threshold: only the fully-null row (1.0) is dropped,
+    # so both half-null-free rows are kept
+    assert len(drop_null_rows(df, threshold=0.6)) == 2
+    # a threshold just above every row's null frac keeps everything
+    assert len(drop_null_rows(df, threshold=1.1)) == 3
+
+
+def test_drop_null_rows_empty_df():
+    out = drop_null_rows(pd.DataFrame({"a": []}), threshold=0.5)
+    assert len(out) == 0 and list(out.columns) == ["a"]
+
+
 def test_profile_types_nulls_cardinality():
     df = pd.DataFrame({
         "id": [1, 2, None],
