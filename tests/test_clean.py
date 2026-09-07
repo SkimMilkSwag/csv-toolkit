@@ -192,3 +192,48 @@ def test_flag_nulls_cli(tmp_path, capsys):
     out = _json.loads(capsys.readouterr().out)
     assert [o["column"] for o in out] == ["rare"]
     assert out[0]["null_rate"] == 0.75 and out[0]["suggestion"] == "drop"
+
+
+def test_dedupe_cli_prints_table(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "dups.csv"
+    # two fully-duplicate rows (1,a) and one unique row (2,b)
+    f.write_text("id,label\n1,a\n1,a\n2,b\n")
+    main(["dedupe", str(f)])
+    out = _io_read(capsys)
+    lines = out.strip().splitlines()
+    assert lines[0] == "id,label"
+    # exactly the two unique rows survive, in order
+    assert [ln for ln in lines[1:]] == ["1,a", "2,b"]
+
+
+def test_dedupe_cli_subset(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "dups.csv"
+    # rows share 'id' but differ in 'note'; --subset id collapses them
+    f.write_text("id,note\n1,first\n1,second\n2,only\n")
+    main(["dedupe", str(f), "--subset", "id"])
+    out = _io_read(capsys).strip().splitlines()
+    # first occurrence kept per id, so 1,first and 2,only survive
+    assert [ln for ln in out[1:]] == ["1,first", "2,only"]
+
+
+def test_dedupe_cli_count(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "dups.csv"
+    f.write_text("id,label\n1,a\n1,a\n1,a\n2,b\n")
+    main(["dedupe", str(f), "--count"])
+    assert _io_read(capsys).strip() == "2"  # 4 rows -> 2 unique, 2 removed
+
+
+def test_dedupe_cli_no_duplicates_count_zero(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "clean.csv"
+    f.write_text("id\n1\n2\n3\n")
+    main(["dedupe", str(f), "--count"])
+    assert _io_read(capsys).strip() == "0"
+
+
+def _io_read(capsys) -> str:
+    """capsys.readouterr().out, isolated so tests above stay unaffected."""
+    return capsys.readouterr().out

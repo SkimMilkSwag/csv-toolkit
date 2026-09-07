@@ -1,8 +1,9 @@
 """CLI for csv-toolkit."""
 import argparse
 import json
+import sys
 
-from .clean import load, drop_null_rows, coerce_numbers, sample
+from .clean import load, drop_null_rows, coerce_numbers, dedupe, sample
 from .stats import summary, profile, flag_sparse_columns
 
 
@@ -25,6 +26,13 @@ def main(argv=None):
     fl.add_argument("--null-frac", type=float, default=0.5, metavar="FRAC",
                     help="flag columns whose null rate exceeds this fraction (default 0.5)")
 
+    dd = sub.add_parser("dedupe", help="remove duplicate rows and print the deduplicated table")
+    dd.add_argument("file")
+    dd.add_argument("--subset", nargs="+", metavar="COL",
+                    help="treat rows as duplicates when these columns match (default: all columns)")
+    dd.add_argument("--count", action="store_true",
+                    help="print how many duplicate rows were removed instead of the table")
+
     args = p.parse_args(argv)
     if args.cmd == "summary":
         df = load(args.file)
@@ -40,6 +48,13 @@ def main(argv=None):
     elif args.cmd == "flag-nulls":
         df = load(args.file)
         print(json.dumps(flag_sparse_columns(df, args.null_frac), indent=2))
+    elif args.cmd == "dedupe":
+        df = load(args.file)
+        out = dedupe(df, args.subset or None)
+        if args.count:
+            print(len(df) - len(out))  # how many duplicate rows were removed
+        else:
+            out.to_csv(sys.stdout, index=False)
     else:
         p.print_help()
 

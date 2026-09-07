@@ -23,6 +23,11 @@ csvtool profile data.csv --coerce   # coerce numeric strings before inferring
 # Flag columns above a null-rate threshold (default 0.5) with drop/impute suggestions
 csvtool flag-nulls data.csv
 csvtool flag-nulls data.csv --null-frac 0.3
+
+# Remove duplicate rows (whole-row, or by the columns named with --subset)
+csvtool dedupe data.csv
+csvtool dedupe data.csv --subset id
+csvtool dedupe data.csv --count    # print how many duplicate rows were removed
 ```
 
 ## Usage (library)
