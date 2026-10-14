@@ -213,6 +213,62 @@ def test_flag_nulls_cli(tmp_path, capsys):
     assert out[0]["null_rate"] == 0.75 and out[0]["suggestion"] == "drop"
 
 
+def test_summary_out_writes_json_file(tmp_path, capsys):
+    import json as _json
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("id,value\n1,10\n2,20\n3,30\n")
+    out_path = str(tmp_path / "reports" / "summary.json")
+    main(["summary", str(f), "--out", out_path])
+    # nothing on stdout; the file holds the same JSON a print would
+    assert capsys.readouterr().out == ""
+    payload = _json.loads(open(out_path).read())
+    assert payload["id"]["nulls"] == 0 and payload["value"]["max"] == 30.0
+
+
+def test_summary_out_non_json_extension_passes_through(tmp_path, capsys):
+    import json as _json
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("id,value\n1,10\n2,20\n")
+    out_path = str(tmp_path / "summary.txt")
+    main(["summary", str(f), "--out", out_path])
+    # a .txt still gets the JSON document verbatim (no re-formatting)
+    payload = _json.loads(open(out_path).read())
+    assert payload["id"]["nulls"] == 0
+
+
+def test_profile_out_writes_file(tmp_path, capsys):
+    import json as _json
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("id,amount\n1,10.5\n2,20.25\n")
+    out_path = str(tmp_path / "profile.json")
+    main(["profile", str(f), "--out", out_path])
+    assert capsys.readouterr().out == ""
+    payload = _json.loads(open(out_path).read())
+    assert payload["amount"]["type"] == "float"
+
+
+def test_out_bad_path_exits_one(tmp_path, capsys):
+    import pytest
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("id\n1\n")
+    # a path whose parent directory doesn't exist yet and can't be created
+    # (we use the read-only root of tmp_path's grandparent): simplest is to
+    # point at a file inside an existing file, so makedirs succeeds but open()
+    # hits NotADirectoryError
+    blocker = tmp_path / "blocker.txt"
+    blocker.write_text("x")
+    bad = str(blocker / "nested" / "out.json")
+    with pytest.raises(SystemExit) as exc:
+        main(["summary", str(f), "--out", bad])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "error:" in err and "out.json" in err
+
+
 def test_dedupe_cli_prints_table(tmp_path, capsys):
     from csvtool.cli import main
     f = tmp_path / "dups.csv"

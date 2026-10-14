@@ -20,6 +20,11 @@ csvtool summary data.csv --max-null-frac 0.3
 csvtool profile data.csv
 csvtool profile data.csv --coerce   # coerce numeric strings before inferring
 
+# Write the report to a file instead of printing it (.json pretty-prints;
+# other extensions pass the JSON through verbatim)
+csvtool summary data.csv --out reports/summary.json
+csvtool profile data.csv --coerce --out profile.json
+
 # Flag columns above a null-rate threshold (default 0.5) with drop/impute suggestions
 csvtool flag-nulls data.csv
 csvtool flag-nulls data.csv --null-frac 0.3
