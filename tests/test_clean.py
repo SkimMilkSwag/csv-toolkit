@@ -65,6 +65,35 @@ def test_infer_type_numeric_strings():
     assert infer_type(pd.Series([None])) == "string"
 
 
+def test_infer_type_iso8601_dates():
+    # plain dates
+    assert infer_type(pd.Series(["2026-10-01", "2026-10-02", "2025-01-31"])) == "date"
+    # full datetimes with Z or numeric zones, fractional seconds, space separator
+    assert infer_type(pd.Series([
+        "2026-10-27T14:30:00Z",
+        "2026-10-27T14:30:05.123+04:00",
+        "2026-10-27 14:30:00",
+    ])) == "date"
+
+
+def test_infer_type_iso8601_mixed_or_junk_stays_string():
+    # below the 90% sniff threshold -> falls through to string
+    assert infer_type(pd.Series(["2026-10-01", "not-a-date"])) == "string"
+    assert infer_type(pd.Series(["October 27, 2026", "yesterday"])) == "string"
+    # wrong shapes must not match: month-first, slashes, bare times
+    assert infer_type(pd.Series(["27/10/2026", "14:30:00", "2026-10-01T9"])) == "string"
+
+
+def test_profile_cli_reports_date_column(tmp_path, capsys):
+    import json as _json
+    from csvtool.cli import main
+    f = tmp_path / "events.csv"
+    f.write_text("event_id,created_at\n1,2026-10-01T08:00:00Z\n2,2026-10-02T09:30:00Z\n")
+    main(["profile", str(f)])
+    out = _json.loads(capsys.readouterr().out)
+    assert out["created_at"]["type"] == "date"
+
+
 def test_profile_cli(tmp_path, capsys):
     import json as _json
     from csvtool.cli import main

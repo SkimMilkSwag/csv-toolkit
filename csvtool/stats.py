@@ -1,4 +1,6 @@
 """Quick descriptive stats for a DataFrame."""
+import re
+
 import pandas as pd
 
 
@@ -32,13 +34,33 @@ def top_categories(df: pd.DataFrame, col: str, n: int = 5) -> list:
     return df[col].value_counts().head(n).reset_index().values.tolist()
 
 
+def _is_iso8601(value: str) -> bool:
+    """Return True when ``value`` parses as an ISO 8601 date or datetime.
+
+    Accepts the common profiles: ``YYYY-MM-DD``, optional time with 'T' or a
+    space separator, an optional fractional second, and a trailing zone
+    (``Z`` or ``+HH:MM``/``-HH:MM``). Full validation is done with a regex so
+    we don't pay for datetime parsing on every value of a large column.
+    """
+    return bool(
+        re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}"                      # date
+            r"(?:[T ]\d{2}:\d{2}:\d{2}"                # time, T or space separator
+            r"(?:\.\d+)?"                              # optional fractional seconds
+            r"(?:Z|[+-]\d{2}:?\d{2})?)?",              # optional zone
+            value.strip(),
+        )
+    )
+
+
 def infer_type(s: pd.Series) -> str:
-    """Best-effort type label for a column: int, float, bool, or string.
+    """Best-effort type label for a column: int, float, bool, date, or string.
 
     Native dtypes are used directly; object columns are sniffed (first 20
-    non-null values) for numeric or boolean content. All-numeric columns
-    with missing values arrive as float dtype — reported as int if every
-    present value is whole, since that's usually the intended type.
+    non-null values) for numeric, boolean, or ISO 8601 date content. All-
+    numeric columns with missing values arrive as float dtype — reported as
+    int if every present value is whole, since that's usually the intended
+    type.
     """
     if s.dtype == bool:
         return "bool"
@@ -47,7 +69,7 @@ def infer_type(s: pd.Series) -> str:
     if pd.api.types.is_float_dtype(s):
         v = s.dropna()
         return "int" if len(v) and (v % 1).abs().max() == 0 else "float"
-    # object columns: sniff a sample of the values for numeric/bool content
+    # object columns: sniff a sample of the values for numeric/bool/date content
     vals = s.dropna().astype(str).head(20)
     if len(vals):
         numeric = vals.str.replace(r"[\$,]", "", regex=True).str.strip()
@@ -57,6 +79,8 @@ def infer_type(s: pd.Series) -> str:
         lowered = vals.str.lower()
         if lowered.isin(["true", "false"]).mean() >= 0.9:
             return "bool"
+        if vals.map(_is_iso8601).mean() >= 0.9:
+            return "date"
     return "string"
 
 
