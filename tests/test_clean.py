@@ -1,3 +1,4 @@
+import json
 import os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
@@ -341,3 +342,90 @@ def test_dedupe_cli_no_duplicates_count_zero(tmp_path, capsys):
 def _io_read(capsys) -> str:
     """capsys.readouterr().out, isolated so tests above stay unaffected."""
     return capsys.readouterr().out
+
+
+# --- end-to-end CLI on a generated 10k-row file --------------------------------
+
+
+def _gen_events_csv(path, n: int = 10_000) -> None:
+    """Write a deterministic synthetic events file with known shapes.
+
+    Columns and their ground truth (n rows total):
+      id        - 0..n-1 as ints, no nulls, cardinality n
+      ts        - ISO 8601 datetimes, no nulls, type 'date'
+      user_id   - integers cycling 0..49, no nulls, cardinality 50
+      status    - ok/error cycling with 2:1 ratio, no nulls, cardinality 2
+      amount    - floats in [0, 1) for even rows, NULL for odd rows:
+                  exactly n/2 nulls, null_rate 0.5
+    """
+    import csv as _csv
+
+    with open(path, "w", newline="") as fh:
+        w = _csv.writer(fh)
+        w.writerow(["id", "ts", "user_id", "status", "amount"])
+        for i in range(n):
+            ts = f"2026-10-01T{i % 24:02d}:{i % 60:02d}:00Z"
+            amount = f"{(i * 7919 % 1000) / 1000:.3f}" if i % 2 == 0 else ""
+            w.writerow([i, ts, i % 50, "ok" if i % 3 else "error", amount])
+
+
+def test_profile_cli_on_generated_10k_file(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "events.csv"
+    _gen_events_csv(f)
+
+    main(["profile", str(f)])
+    out = json.loads(_io_read(capsys))
+
+    # every column is profiled, in file order
+    assert list(out.keys()) == ["id", "ts", "user_id", "status", "amount"]
+    # int column: no nulls, full cardinality
+    assert out["id"]["type"] == "int"
+    assert out["id"]["nulls"] == 0
+    assert out["id"]["cardinality"] == 10_000
+    # ISO timestamps infer as date
+    assert out["ts"]["type"] == "date"
+    # bounded-int column: exact cardinality, no nulls
+    assert out["user_id"]["type"] == "int"
+    assert out["user_id"]["cardinality"] == 50
+    # two-value string column
+    assert out["status"]["type"] == "string"
+    assert out["status"]["cardinality"] == 2
+    # half-null float column: null count and rate are exact at 10k rows
+    assert out["amount"]["nulls"] == 5_000
+    assert out["amount"]["null_rate"] == 0.5
+
+
+def test_summary_cli_on_generated_10k_file(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "events.csv"
+    _gen_events_csv(f)
+
+    main(["summary", str(f)])
+    out = json.loads(_io_read(capsys))
+
+    assert set(out.keys()) == {"id", "ts", "user_id", "status", "amount"}
+    # the only column with nulls is amount, and exactly half of it
+    assert out["amount"]["nulls"] == 5_000
+    for col in ("id", "ts", "user_id", "status"):
+        assert out[col]["nulls"] == 0
+    # numeric stats are present and sane at this scale
+    assert out["id"]["dtype"] == "int64"
+    assert out["id"]["min"] == 0.0
+    assert out["id"]["max"] == 9_999.0
+    # user_id cycles 0..49: mean is exactly 24.5
+    assert out["user_id"]["mean"] == 24.5
+
+
+def test_profile_cli_on_generated_file_writes_out(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "events.csv"
+    _gen_events_csv(f)
+    report = tmp_path / "report.json"
+
+    main(["profile", str(f), "--out", str(report)])
+    # --out writes the file and prints nothing
+    assert _io_read(capsys).strip() == ""
+    out = json.loads(report.read_text())
+    assert out["id"]["cardinality"] == 10_000
+    assert out["amount"]["null_rate"] == 0.5
