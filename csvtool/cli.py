@@ -64,6 +64,10 @@ def main(argv=None):
                     help="treat rows as duplicates when these columns match (default: all columns)")
     dd.add_argument("--count", action="store_true",
                     help="print how many duplicate rows were removed instead of the table")
+    dd.add_argument("--out", metavar="PATH", default=None,
+                    help="write the deduplicated table to PATH (CSV) instead of "
+                         "printing it; --count still prints the removal count "
+                         "to stdout")
 
     args = p.parse_args(argv)
     if args.cmd == "summary":
@@ -84,8 +88,12 @@ def main(argv=None):
         df = load(args.file)
         out = dedupe(df, args.subset or None)
         if args.count:
-            print(len(df) - len(out))  # how many duplicate rows were removed
-        else:
+            # the removal count is the headline number; it always goes to
+            # stdout so callers can capture it even when the table is filed
+            print(len(df) - len(out))
+        if args.out:
+            _emit(out.to_csv(index=False), args.out)
+        elif not args.count:
             out.to_csv(sys.stdout, index=False)
     else:
         p.print_help()

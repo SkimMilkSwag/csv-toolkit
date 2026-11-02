@@ -339,6 +339,59 @@ def test_dedupe_cli_no_duplicates_count_zero(tmp_path, capsys):
     assert _io_read(capsys).strip() == "0"
 
 
+def test_dedupe_out_writes_file(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "dups.csv"
+    # two fully-duplicate rows (1,a) and one unique row (2,b); --out files
+    # the deduplicated table instead of printing it
+    f.write_text("id,label\n1,a\n1,a\n2,b\n")
+    out_path = str(tmp_path / "deduped.csv")
+    main(["dedupe", str(f), "--out", out_path])
+    # nothing on stdout; the file holds exactly the unique rows, in order
+    assert _io_read(capsys) == ""
+    lines = open(out_path).read().strip().splitlines()
+    assert lines[0] == "id,label"
+    assert [ln for ln in lines[1:]] == ["1,a", "2,b"]
+
+
+def test_dedupe_out_with_count_prints_count_to_stdout(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "dups.csv"
+    # 4 rows -> 2 unique; --count must still surface the removal count even
+    # though the table goes to a file
+    f.write_text("id,label\n1,a\n1,a\n1,a\n2,b\n")
+    out_path = str(tmp_path / "deduped.csv")
+    main(["dedupe", str(f), "--out", out_path, "--count"])
+    assert _io_read(capsys).strip() == "2"
+    lines = open(out_path).read().strip().splitlines()
+    assert [ln for ln in lines[1:]] == ["1,a", "2,b"]
+
+
+def test_dedupe_out_with_subset(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "dups.csv"
+    # rows share 'id' but differ in 'note'; --subset id collapses them and the
+    # result is filed, not printed
+    f.write_text("id,note\n1,first\n1,second\n2,only\n")
+    out_path = str(tmp_path / "deduped.csv")
+    main(["dedupe", str(f), "--subset", "id", "--out", out_path])
+    assert _io_read(capsys) == ""
+    lines = open(out_path).read().strip().splitlines()
+    # first occurrence kept per id: 1,first and 2,only survive
+    assert [ln for ln in lines[1:]] == ["1,first", "2,only"]
+
+
+def test_dedupe_out_creates_parent_dirs(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "dups.csv"
+    f.write_text("id\n1\n1\n")
+    out_path = str(tmp_path / "reports" / "nested" / "deduped.csv")
+    main(["dedupe", str(f), "--out", out_path])
+    assert _io_read(capsys) == ""
+    lines = open(out_path).read().strip().splitlines()
+    assert [ln for ln in lines[1:]] == ["1"]
+
+
 def _io_read(capsys) -> str:
     """capsys.readouterr().out, isolated so tests above stay unaffected."""
     return capsys.readouterr().out
