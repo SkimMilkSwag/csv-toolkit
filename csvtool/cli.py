@@ -5,7 +5,7 @@ import os
 import sys
 
 from .clean import load, drop_null_rows, coerce_numbers, dedupe, sample
-from .stats import summary, profile, flag_sparse_columns
+from .stats import summary, profile, flag_sparse_columns, drop_const_columns
 
 
 def _emit(payload: str, out: str | None) -> None:
@@ -42,6 +42,8 @@ def main(argv=None):
     s.add_argument("--max-null-frac", type=float, default=0.5)
     s.add_argument("--sample", type=int, default=None, metavar="N",
                    help="summarize an i.i.d. sample of N rows instead of the full file (for large files)")
+    s.add_argument("--drop-const", action="store_true",
+                   help="suppress columns with zero variance (cardinality <= 1) from the report")
     s.add_argument("--out", metavar="PATH", default=None,
                    help="write the report to PATH (.json pretty-prints; other extensions pass through) "
                         "instead of printing it")
@@ -49,6 +51,8 @@ def main(argv=None):
     pr = sub.add_parser("profile", help="per-column type inference + null rate + cardinality")
     pr.add_argument("file")
     pr.add_argument("--coerce", action="store_true", help="try to coerce numeric strings before inferring types")
+    pr.add_argument("--drop-const", action="store_true",
+                    help="suppress columns with zero variance (cardinality <= 1) from the report")
     pr.add_argument("--out", metavar="PATH", default=None,
                     help="write the profile to PATH (.json pretty-prints; other extensions pass through) "
                          "instead of printing it")
@@ -75,11 +79,15 @@ def main(argv=None):
         if args.sample is not None:
             df = sample(df, args.sample)
         df = drop_null_rows(df, args.max_null_frac)
+        if args.drop_const:
+            df, _ = drop_const_columns(df)
         _emit(_json_payload(summary(df)), args.out)
     elif args.cmd == "profile":
         df = load(args.file)
         if args.coerce:
             df = coerce_numbers(df)
+        if args.drop_const:
+            df, _ = drop_const_columns(df)
         _emit(_json_payload(profile(df)), args.out)
     elif args.cmd == "flag-nulls":
         df = load(args.file)

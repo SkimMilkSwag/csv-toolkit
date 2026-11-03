@@ -100,6 +100,20 @@ def profile(df: pd.DataFrame) -> dict:
     return out
 
 
+def drop_const_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, list]:
+    """Return ``(df minus constant columns, dropped column names)``.
+
+    A constant column is one with zero variance: at most one distinct value
+    counting non-null entries (``nunique(dropna=True) <= 1``). An all-null
+    column counts too — it carries no signal either — and an empty frame
+    drops every column, so callers should check ``len(df)`` first if that
+    would surprise them. Column order of the kept frame is unchanged and the
+    input is not mutated (``drop`` returns a copy).
+    """
+    const = [col for col in df.columns if df[col].nunique(dropna=True) <= 1]
+    return df.drop(columns=const), list(const)
+
+
 def flag_sparse_columns(df: pd.DataFrame, null_frac_threshold: float = 0.5) -> list:
     """Flag columns whose null rate exceeds ``null_frac_threshold``.
 

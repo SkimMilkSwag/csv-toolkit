@@ -21,6 +21,11 @@ csvtool summary data.csv --max-null-frac 0.3
 csvtool profile data.csv
 csvtool profile data.csv --coerce   # coerce numeric strings before inferring
 
+# Suppress zero-variance columns (cardinality <= 1, all-null included) from
+# the report — handy for dropping env/build-tag style constants at a glance
+csvtool summary data.csv --drop-const
+csvtool profile data.csv --drop-const
+
 # Write the report to a file instead of printing it (.json pretty-prints;
 # other extensions pass the JSON through verbatim)
 csvtool summary data.csv --out reports/summary.json

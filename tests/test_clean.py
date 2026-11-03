@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 import pandas as pd
 from csvtool.clean import drop_null_rows, coerce_numbers, dedupe, sample
-from csvtool.stats import profile, infer_type, summary, flag_sparse_columns
+from csvtool.stats import profile, infer_type, summary, flag_sparse_columns, drop_const_columns
 
 
 def test_drop_null_rows():
@@ -241,6 +241,72 @@ def test_flag_nulls_cli(tmp_path, capsys):
     out = _json.loads(capsys.readouterr().out)
     assert [o["column"] for o in out] == ["rare"]
     assert out[0]["null_rate"] == 0.75 and out[0]["suggestion"] == "drop"
+
+
+# --- drop-const ----------------------------------------------------------------
+
+
+def _const_df() -> pd.DataFrame:
+    return pd.DataFrame({
+        "id": [1, 2, 3],
+        "env": ["prod", "prod", "prod"],          # constant
+        "empty": [None, None, None],              # all-null counts as zero-variance
+        "value": [1.5, 2.5, 3.0],                 # real signal
+    })
+
+
+def test_drop_const_columns_removes_zero_variance():
+    kept, dropped = drop_const_columns(_const_df())
+    assert list(kept.columns) == ["id", "value"]        # order preserved, input unmutated
+    assert dropped == ["env", "empty"]
+    assert _const_df().shape[1] == 4
+
+
+def test_drop_const_columns_keeps_single_distinct_with_nulls():
+    # one distinct non-null value plus nulls -> nunique(dropna=True) == 1 -> constant
+    df = pd.DataFrame({"flag": ["x", None, "x"], "n": [1, 2, 3]})
+    kept, dropped = drop_const_columns(df)
+    assert dropped == ["flag"] and list(kept.columns) == ["n"]
+
+
+def test_drop_const_columns_no_constants():
+    df = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+    kept, dropped = drop_const_columns(df)
+    assert dropped == [] and list(kept.columns) == ["a", "b"]
+
+
+def test_drop_const_columns_empty_frame_drops_everything():
+    df = pd.DataFrame({"a": [], "b": []})
+    kept, dropped = drop_const_columns(df)
+    assert dropped == ["a", "b"] and list(kept.columns) == []
+
+
+def test_profile_cli_drop_const(tmp_path, capsys):
+    import json as _json
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    # 'env' is constant, 'empty' is all-null; 'id' and 'value' carry signal
+    f.write_text("id,env,value\n1,prod,1.5\n2,prod,2.5\n3,prod,3.0\n")
+    main(["profile", str(f)])
+    full = _json.loads(capsys.readouterr().out)
+    assert set(full.keys()) == {"id", "env", "value"}
+
+    main(["profile", str(f), "--drop-const"])
+    out = _json.loads(capsys.readouterr().out)
+    # only the signal columns survive, in original order
+    assert list(out.keys()) == ["id", "value"]
+    assert out["id"]["cardinality"] == 3
+
+
+def test_summary_cli_drop_const(tmp_path, capsys):
+    import json as _json
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("id,env,value\n1,prod,10\n2,prod,20\n3,prod,30\n")
+    main(["summary", str(f), "--drop-const"])
+    out = _json.loads(capsys.readouterr().out)
+    assert set(out.keys()) == {"id", "value"}
+    assert out["value"]["max"] == 30.0
 
 
 def test_summary_out_writes_json_file(tmp_path, capsys):
