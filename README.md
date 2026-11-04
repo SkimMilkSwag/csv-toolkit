@@ -39,6 +39,7 @@ csvtool flag-nulls data.csv --null-frac 0.3
 csvtool dedupe data.csv
 csvtool dedupe data.csv --subset id
 csvtool dedupe data.csv --count    # print how many duplicate rows were removed
+csvtool dedupe data.csv --out clean.csv   # file the result; --count still prints to stdout
 ```
 
 ## Usage (library)

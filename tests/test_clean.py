@@ -548,3 +548,41 @@ def test_profile_cli_on_generated_file_writes_out(tmp_path, capsys):
     out = json.loads(report.read_text())
     assert out["id"]["cardinality"] == 10_000
     assert out["amount"]["null_rate"] == 0.5
+
+
+def test_dedupe_out_writes_csv_file(tmp_path, capsys):
+    """dedupe --out PATH files the cleaned table; --count still prints to stdout."""
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("id,name\n1,alice\n1,alice\n2,bob\n3,carol\n")
+    out_path = str(tmp_path / "reports" / "clean.csv")
+    main(["dedupe", str(f), "--out", out_path, "--count"])
+    # stdout carries ONLY the removed-row count; the table goes to the file
+    assert capsys.readouterr().out.strip() == "1"
+    got = open(out_path).read().strip().splitlines()
+    assert got[0] == "id,name"
+    assert len(got) == 4  # header + 3 unique rows
+    assert any("alice" in line for line in got) and any("carol" in line for line in got)
+
+
+def test_dedupe_out_without_count_silent_on_stdout(tmp_path, capsys):
+    """Without --count, dedupe --out prints nothing to stdout at all."""
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("x\n1\n1\n2\n")
+    out_path = str(tmp_path / "clean.csv")
+    main(["dedupe", str(f), "--out", out_path])
+    assert capsys.readouterr().out == ""
+    got = open(out_path).read().strip().splitlines()
+    assert len(got) == 3  # header + 2 unique rows
+
+
+def test_dedupe_out_respects_subset(tmp_path):
+    """--subset restricts dedupe --out to the given columns' values."""
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("id,tag\n1,a\n2,a\n3,b\n")
+    out_path = str(tmp_path / "clean.csv")
+    main(["dedupe", str(f), "--out", out_path, "--subset", "tag"])
+    got = open(out_path).read().strip().splitlines()
+    assert len(got) == 3  # header + 2 distinct tag values
