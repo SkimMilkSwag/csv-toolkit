@@ -1,7 +1,6 @@
 """Quick descriptive stats for a DataFrame."""
 import re
 
-import numpy as np
 import pandas as pd
 
 
@@ -139,20 +138,6 @@ def spread(df: pd.DataFrame, columns: list | None = None) -> dict:
         }
         out[col] = entry
     return out
-
-
-def categories(df: pd.DataFrame, col: str, max_values: int | None = None) -> list:
-    """Sorted unique non-null values of a column.
-
-    ``max_values`` caps the list; when it does, a trailing ``"…"`` marker
-    makes the truncation visible in JSON output. Non-string cells are
-    rendered with ``str`` so mixed-type columns still report cleanly.
-    """
-    vals = df[col].dropna().unique()
-    vals = sorted(vals, key=lambda v: (str(type(v)), str(v)))
-    if max_values is not None and len(vals) > max_values:
-        vals = list(vals[:max_values]) + ["…"]
-    return [v.item() if isinstance(v, np.generic) else v for v in vals]
 
 
 def flag_sparse_columns(df: pd.DataFrame, null_frac_threshold: float = 0.5) -> list:

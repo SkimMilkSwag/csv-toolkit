@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 import pandas as pd
 from csvtool.clean import drop_null_rows, coerce_numbers, dedupe, sample
-from csvtool.stats import profile, infer_type, summary, flag_sparse_columns, drop_const_columns, spread, categories
+from csvtool.stats import profile, infer_type, summary, flag_sparse_columns, drop_const_columns, spread
 
 
 def test_drop_null_rows():
@@ -620,28 +620,6 @@ def test_spread_null_values_ignored():
     assert out["x"]["median"] == 2.0  # NaN skipped by quantile/median
 
 
-def test_categories_sorted_and_deduped():
-    df = pd.DataFrame({"s": ["b", "a", "c", "a", None]})
-    assert categories(df, "s") == ["a", "b", "c"]  # unique, sorted, nulls dropped
-
-
-def test_categories_max_marks_truncation():
-    df = pd.DataFrame({"s": ["d", "a", "b", "c", "e"]})
-    out = categories(df, "s", max_values=2)
-    assert out == ["a", "b", "…"]  # capped list ends with the marker
-
-
-def test_categories_numeric_column_stays_typed():
-    df = pd.DataFrame({"n": [3, 1, 2]})
-    assert categories(df, "n") == [1, 2, 3]  # numeric cells keep their type
-
-
-def test_categories_mixed_type_column():
-    df = pd.DataFrame({"m": [1, "b", None, 1]})
-    # numeric cells keep their type; strings pass through; nulls drop out
-    assert categories(df, "m") == [1, "b"]
-
-
 def test_spread_cli_end_to_end(tmp_path, capsys):
     from csvtool.cli import main
     f = tmp_path / "data.csv"
@@ -667,22 +645,6 @@ def test_spread_cli_no_numeric_columns(tmp_path, capsys):
     f.write_text("a,b\nfoo,bar\nbaz,qux\n")
     main(["spread", str(f)])
     assert json.loads(capsys.readouterr().out) == {}  # no numeric columns
-
-
-def test_categories_cli_end_to_end(tmp_path, capsys):
-    from csvtool.cli import main
-    f = tmp_path / "data.csv"
-    f.write_text("id,t\n1,b\n2,a\n3,c\n4,a\n")
-    main(["categories", str(f), "--column", "t"])
-    assert json.loads(capsys.readouterr().out) == ["a", "b", "c"]
-    # --max caps and marks truncation
-    main(["categories", str(f), "--column", "t", "--max", "1"])
-    assert json.loads(capsys.readouterr().out) == ["a", "…"]
-    # --out path
-    out_path = str(tmp_path / "cats.json")
-    main(["categories", str(f), "--column", "t", "--out", out_path])
-    assert capsys.readouterr().out == ""
-    assert json.load(open(out_path)) == ["a", "b", "c"]
 
 
 def test_spread_cli_header_only_frame(tmp_path, capsys):

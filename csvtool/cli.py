@@ -5,7 +5,7 @@ import os
 import sys
 
 from .clean import load, drop_null_rows, coerce_numbers, dedupe, sample
-from .stats import summary, profile, flag_sparse_columns, drop_const_columns, spread, categories
+from .stats import summary, profile, flag_sparse_columns, drop_const_columns, spread
 
 
 def _emit(payload: str, out: str | None) -> None:
@@ -81,16 +81,6 @@ def main(argv=None):
                     help="write the report to PATH (.json pretty-prints; other extensions pass through) "
                          "instead of printing it")
 
-    ct = sub.add_parser("categories", help="sorted unique values of a column as JSON")
-    ct.add_argument("file")
-    ct.add_argument("--column", required=True, metavar="COL",
-                    help="the column to enumerate")
-    ct.add_argument("--max", type=int, default=None, metavar="N",
-                    help="cap the list at N values (a trailing … marks truncation)")
-    ct.add_argument("--out", metavar="PATH", default=None,
-                    help="write the report to PATH (.json pretty-prints; other extensions pass through) "
-                         "instead of printing it")
-
     args = p.parse_args(argv)
     if args.cmd == "summary":
         df = load(args.file)
@@ -124,9 +114,6 @@ def main(argv=None):
     elif args.cmd == "spread":
         df = load(args.file)
         _emit(_json_payload(spread(df, args.columns)), args.out)
-    elif args.cmd == "categories":
-        df = load(args.file)
-        _emit(_json_payload(categories(df, args.column, args.max)), args.out)
     else:
         p.print_help()
 
