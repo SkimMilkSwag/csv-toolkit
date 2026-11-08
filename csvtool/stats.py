@@ -140,6 +140,22 @@ def spread(df: pd.DataFrame, columns: list | None = None) -> dict:
     return out
 
 
+def categories(df: pd.DataFrame, col: str, max_values: int | None = None) -> list:
+    """Sorted unique non-null values of a column.
+
+    Values are sorted by (type name, value) so mixed-type columns order
+    deterministically instead of raising on cross-type comparison; numpy
+    scalars are converted to their Python equivalents for stable JSON output.
+    ``max_values`` caps the list; when it does, a trailing ``"…"`` marker
+    makes the truncation visible in JSON output.
+    """
+    vals = df[col].dropna().unique()
+    vals = sorted(vals, key=lambda v: (str(type(v)), str(v)))
+    if max_values is not None and len(vals) > max_values:
+        vals = list(vals[:max_values]) + ["…"]
+    return [v.item() if hasattr(v, "item") else v for v in vals]
+
+
 def flag_sparse_columns(df: pd.DataFrame, null_frac_threshold: float = 0.5) -> list:
     """Flag columns whose null rate exceeds ``null_frac_threshold``.
 
