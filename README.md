@@ -2,7 +2,8 @@
 
 A small toolkit for cleaning and summarising CSV files with pandas. Handles the
 annoying real-world cases: dropping mostly-null rows, coercing strings like
-`$1,234` into numbers, deduping, and printing a compact per-column summary.
+`$1,234` into numbers, deduping, per-column type profiling, and printing a
+compact summary or spread (min/q25/median/q75/max) report.
 
 ## Install
 
@@ -30,6 +31,16 @@ csvtool profile data.csv --drop-const
 # other extensions pass the JSON through verbatim)
 csvtool summary data.csv --out reports/summary.json
 csvtool profile data.csv --coerce --out profile.json
+
+# Per-numeric-column min / q25 / median / q75 / max as JSON (non-numeric
+# columns are omitted; --columns restricts the report to named columns)
+csvtool spread data.csv
+csvtool spread data.csv --columns price qty --out reports/spread.json
+
+# Sorted unique values of a column as JSON (nulls dropped, deduplicated;
+# --max caps the list and appends an … marker when it truncates)
+csvtool categories data.csv --column region
+csvtool categories data.csv --column region --max 10
 
 # Flag columns above a null-rate threshold (default 0.5) with drop/impute suggestions
 csvtool flag-nulls data.csv
