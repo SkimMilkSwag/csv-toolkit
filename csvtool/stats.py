@@ -1,6 +1,7 @@
 """Quick descriptive stats for a DataFrame."""
 import re
 
+import numpy as np
 import pandas as pd
 
 
@@ -112,6 +113,46 @@ def drop_const_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, list]:
     """
     const = [col for col in df.columns if df[col].nunique(dropna=True) <= 1]
     return df.drop(columns=const), list(const)
+
+
+def spread(df: pd.DataFrame, columns: list | None = None) -> dict:
+    """Per-numeric-column spread report: min, median, max, q25 and q75.
+
+    Only numeric columns appear (pass ``columns`` to restrict which ones are
+    reported). Quartiles are linear-interpolated via ``Series.quantile``; an
+    empty frame reports ``None`` for every stat so the JSON stays stable.
+    Output is JSON-serialisable, in the shape of :func:`summary`.
+    """
+    if columns is None:
+        columns = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    out = {}
+    for col in columns:
+        s = df[col]
+        if not pd.api.types.is_numeric_dtype(s):
+            continue
+        entry = {
+            "min": float(s.min()) if len(s) else None,
+            "q25": float(s.quantile(0.25)) if len(s) else None,
+            "median": float(s.median()) if len(s) else None,
+            "q75": float(s.quantile(0.75)) if len(s) else None,
+            "max": float(s.max()) if len(s) else None,
+        }
+        out[col] = entry
+    return out
+
+
+def categories(df: pd.DataFrame, col: str, max_values: int | None = None) -> list:
+    """Sorted unique non-null values of a column.
+
+    ``max_values`` caps the list; when it does, a trailing ``"…"`` marker
+    makes the truncation visible in JSON output. Non-string cells are
+    rendered with ``str`` so mixed-type columns still report cleanly.
+    """
+    vals = df[col].dropna().unique()
+    vals = sorted(vals, key=lambda v: (str(type(v)), str(v)))
+    if max_values is not None and len(vals) > max_values:
+        vals = list(vals[:max_values]) + ["…"]
+    return [v.item() if isinstance(v, np.generic) else v for v in vals]
 
 
 def flag_sparse_columns(df: pd.DataFrame, null_frac_threshold: float = 0.5) -> list:

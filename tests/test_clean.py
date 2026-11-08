@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 import pandas as pd
 from csvtool.clean import drop_null_rows, coerce_numbers, dedupe, sample
-from csvtool.stats import profile, infer_type, summary, flag_sparse_columns, drop_const_columns
+from csvtool.stats import profile, infer_type, summary, flag_sparse_columns, drop_const_columns, spread, categories
 
 
 def test_drop_null_rows():
@@ -586,3 +586,115 @@ def test_dedupe_out_respects_subset(tmp_path):
     main(["dedupe", str(f), "--out", out_path, "--subset", "tag"])
     got = open(out_path).read().strip().splitlines()
     assert len(got) == 3  # header + 2 distinct tag values
+
+
+def test_spread_numeric_only_quartiles():
+    df = pd.DataFrame({
+        "x": [1, 2, 3, 4],
+        "y": ["a", "b", "a", "b"],
+        "f": [1.5, 2.5, 3.5, 4.5],
+    })
+    out = spread(df)
+    assert set(out) == {"x", "f"}  # non-numeric column is omitted
+    assert out["x"]["min"] == 1.0 and out["x"]["max"] == 4.0
+    assert out["x"]["median"] == 2.5
+    assert out["x"]["q25"] == 1.75 and out["x"]["q75"] == 3.25
+    assert out["f"]["median"] == 3.0
+
+
+def test_spread_column_filter_and_empty():
+    df = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0]})
+    out = spread(df, columns=["b"])
+    assert set(out) == {"b"} and out["b"]["min"] == 3.0
+    # non-numeric name in the filter is skipped, not an error
+    df2 = pd.DataFrame({"s": ["x"], "n": [7]})
+    assert set(spread(df2, columns=["s", "n"])) == {"n"}
+    # empty frame: every stat is None so JSON stays stable
+    e = spread(pd.DataFrame({"a": [], "b": []}))
+    assert set(e["a"].values()) == {None} and set(e["b"].values()) == {None}
+
+
+def test_spread_null_values_ignored():
+    df = pd.DataFrame({"x": [1, None, 3]})
+    out = spread(df)
+    assert out["x"]["median"] == 2.0  # NaN skipped by quantile/median
+
+
+def test_categories_sorted_and_deduped():
+    df = pd.DataFrame({"s": ["b", "a", "c", "a", None]})
+    assert categories(df, "s") == ["a", "b", "c"]  # unique, sorted, nulls dropped
+
+
+def test_categories_max_marks_truncation():
+    df = pd.DataFrame({"s": ["d", "a", "b", "c", "e"]})
+    out = categories(df, "s", max_values=2)
+    assert out == ["a", "b", "…"]  # capped list ends with the marker
+
+
+def test_categories_numeric_column_stays_typed():
+    df = pd.DataFrame({"n": [3, 1, 2]})
+    assert categories(df, "n") == [1, 2, 3]  # numeric cells keep their type
+
+
+def test_categories_mixed_type_column():
+    df = pd.DataFrame({"m": [1, "b", None, 1]})
+    # numeric cells keep their type; strings pass through; nulls drop out
+    assert categories(df, "m") == [1, "b"]
+
+
+def test_spread_cli_end_to_end(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("x,t\n1,a\n2,b\n3,c\n4,d\n")
+    main(["spread", str(f)])
+    payload = json.loads(capsys.readouterr().out)
+    assert set(payload) == {"x"}
+    assert payload["x"]["median"] == 2.5 and payload["x"]["q75"] == 3.25
+    # --columns restricts the report
+    main(["spread", str(f), "--columns", "t"])
+    assert json.loads(capsys.readouterr().out) == {}
+    # --out writes pretty JSON to the file, nothing to stdout
+    out_path = str(tmp_path / "sub" / "spread.json")
+    main(["spread", str(f), "--out", out_path])
+    assert capsys.readouterr().out == ""
+    got = json.load(open(out_path))
+    assert got["x"]["min"] == 1.0 and got["x"]["max"] == 4.0
+
+
+def test_spread_cli_no_numeric_columns(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "strs.csv"
+    f.write_text("a,b\nfoo,bar\nbaz,qux\n")
+    main(["spread", str(f)])
+    assert json.loads(capsys.readouterr().out) == {}  # no numeric columns
+
+
+def test_categories_cli_end_to_end(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("id,t\n1,b\n2,a\n3,c\n4,a\n")
+    main(["categories", str(f), "--column", "t"])
+    assert json.loads(capsys.readouterr().out) == ["a", "b", "c"]
+    # --max caps and marks truncation
+    main(["categories", str(f), "--column", "t", "--max", "1"])
+    assert json.loads(capsys.readouterr().out) == ["a", "…"]
+    # --out path
+    out_path = str(tmp_path / "cats.json")
+    main(["categories", str(f), "--column", "t", "--out", out_path])
+    assert capsys.readouterr().out == ""
+    assert json.load(open(out_path)) == ["a", "b", "c"]
+
+
+def test_spread_cli_header_only_frame(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "empty.csv"
+    f.write_text("x,y\n")
+    main(["spread", str(f)])
+    # header-only CSVs arrive as object dtype, so no column qualifies
+    assert json.loads(capsys.readouterr().out) == {}
+
+
+def test_spread_library_empty_frame():
+    # empty numeric frame (dtype set explicitly): every stat is None
+    e = spread(pd.DataFrame({"a": pd.Series(dtype="float64"), "b": pd.Series(dtype="float64")}))
+    assert set(e["a"].values()) == {None} and set(e["b"].values()) == {None}
