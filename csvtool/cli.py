@@ -5,7 +5,7 @@ import os
 import sys
 
 from .clean import load, drop_null_rows, coerce_numbers, dedupe, sample
-from .stats import summary, profile, flag_sparse_columns, drop_const_columns, spread, categories
+from .stats import summary, profile, flag_sparse_columns, drop_const_columns, spread, outlier, categories
 
 
 def _emit(payload: str, out: str | None) -> None:
@@ -81,6 +81,16 @@ def main(argv=None):
                     help="write the report to PATH (.json pretty-prints; other extensions pass through) "
                          "instead of printing it")
 
+    ol = sub.add_parser("outlier", help="per-numeric-column Tukey IQR outlier report as JSON")
+    ol.add_argument("file")
+    ol.add_argument("--columns", nargs="+", metavar="COL",
+                    help="restrict the report to these columns (default: all numeric columns)")
+    ol.add_argument("--k", type=float, default=1.5, metavar="K",
+                    help="IQR multiplier for the fences, k*iqr beyond q1/q3 (default 1.5)")
+    ol.add_argument("--out", metavar="PATH", default=None,
+                    help="write the report to PATH (.json pretty-prints; other extensions pass through) "
+                         "instead of printing it")
+
     ct = sub.add_parser("categories", help="sorted unique values of a column as JSON")
     ct.add_argument("file")
     ct.add_argument("--column", required=True, metavar="COL",
@@ -124,6 +134,9 @@ def main(argv=None):
     elif args.cmd == "spread":
         df = load(args.file)
         _emit(_json_payload(spread(df, args.columns)), args.out)
+    elif args.cmd == "outlier":
+        df = load(args.file)
+        _emit(_json_payload(outlier(df, args.columns, args.k)), args.out)
     elif args.cmd == "categories":
         df = load(args.file)
         _emit(_json_payload(categories(df, args.column, args.max)), args.out)

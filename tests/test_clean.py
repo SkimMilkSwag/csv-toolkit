@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 import pandas as pd
 from csvtool.clean import drop_null_rows, coerce_numbers, dedupe, sample
-from csvtool.stats import profile, infer_type, summary, flag_sparse_columns, drop_const_columns, spread, categories
+from csvtool.stats import profile, infer_type, summary, flag_sparse_columns, drop_const_columns, spread, outlier, categories
 
 
 def test_drop_null_rows():
@@ -694,3 +694,77 @@ def test_categories_cli_end_to_end(tmp_path, capsys):
     main(["categories", str(f), "--column", "t", "--out", out_path])
     assert capsys.readouterr().out == ""
     assert json.load(open(out_path)) == ["a", "b", "c"]
+
+
+def test_outlier_fences_and_flagged():
+    # 1..10 uniform: q1 = 3.25, q3 = 7.75, iqr = 4.5 -> fences -3.5 / 14.5, nothing flagged
+    df = pd.DataFrame({"x": list(range(1, 11))})
+    out = outlier(df)
+    assert out["x"]["lower_fence"] == -3.5 and out["x"]["upper_fence"] == 14.5
+    assert out["x"]["flagged"] == 0 and out["x"]["flag_rate"] == 0.0
+
+
+def test_outlier_flags_extreme_values():
+    df = pd.DataFrame({"price": [10, 11, 12, 11, 10, 12, 11, 10, 90]})
+    out = outlier(df)
+    # q1 = 10.0, q3 = 12.0 (interpolated), iqr = 2 -> fences 7.0 / 15.0: only the 90 is flagged
+    assert out["price"]["lower_fence"] == 7.0 and out["price"]["upper_fence"] == 15.0
+    assert out["price"]["flagged"] == 1 and abs(out["price"]["flag_rate"] - 1 / 9) < 1e-4
+
+
+def test_outlier_k_multiplier_tightens_fences():
+    df = pd.DataFrame({"x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]})
+    out = outlier(df)
+    assert out["x"]["flagged"] == 0  # uniform data: nothing outside the fences
+    # a lone spike gets flagged at the default k=1.5...
+    df2 = pd.DataFrame({"x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 100]})
+    assert outlier(df2)["x"]["flagged"] == 1
+    # ...and k=1.0 (the tightest reasonable fences) still catches it; a modest
+    # k=1.5 shift only moves the fence values, not the verdict here
+    assert outlier(df2, k=1.0)["x"]["flagged"] == 1
+    # k scales the fences linearly: wider fence, same iqr-based base
+    loose = outlier(df2, k=3.0)["x"]
+    tight = outlier(df2, k=1.5)["x"]
+    assert loose["upper_fence"] > tight["upper_fence"]
+
+
+def test_outlier_nulls_skipped():
+    df = pd.DataFrame({"x": [1, None, 2, None, 3]})
+    out = outlier(df)
+    # fences computed over [1, 2, 3]; rate denominator is non-null count (3), not len(df)
+    assert out["x"]["flagged"] == 0
+    assert out["x"]["flag_rate"] == 0.0
+
+
+def test_outlier_columns_passthrough():
+    df = pd.DataFrame({"x": [1, 2, 3], "name": ["a", "b", "c"], "y": [10.5, 20.5, 30.5]})
+    # non-numeric --columns are silently skipped, like spread
+    assert outlier(df, columns=["name"]) == {}
+    # restricting to a subset drops the other numeric column
+    got = outlier(df, columns=["y"])
+    assert set(got) == {"y"}
+
+
+def test_outlier_cli_end_to_end(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("price,note\n10,ok\n11,ok\n10,ok\n90,spike\n11,ok\n")
+    main(["outlier", str(f)])
+    payload = json.loads(capsys.readouterr().out)
+    assert set(payload) == {"price"}  # note column is non-numeric, omitted
+    assert payload["price"]["flagged"] == 1
+    # --columns restricts the report
+    main(["outlier", str(f), "--columns", "note"])
+    assert json.loads(capsys.readouterr().out) == {}
+    # --k widens the fences: same flagged value, but a looser upper bound
+    main(["outlier", str(f), "--k", "10"])
+    assert json.loads(capsys.readouterr().out)["price"]["upper_fence"] > 15.0
+    # --out writes pretty JSON to the file, nothing to stdout
+    out_path = str(tmp_path / "outliers.json")
+    main(["outlier", str(f), "--out", out_path])
+    assert capsys.readouterr().out == ""
+    got = json.load(open(out_path))
+    # file data is 10, 11, 10, 90, 11: q1 = 10.0, q3 = 11.0, iqr = 1
+    # -> fences 8.5 / 12.5; only the 90 is flagged
+    assert got["price"]["upper_fence"] == 12.5 and got["price"]["lower_fence"] == 8.5
+    assert got["price"]["flagged"] == 1

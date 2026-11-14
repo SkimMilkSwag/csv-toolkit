@@ -140,6 +140,42 @@ def spread(df: pd.DataFrame, columns: list | None = None) -> dict:
     return out
 
 
+def outlier(df: pd.DataFrame, columns: list | None = None, k: float = 1.5) -> dict:
+    """Per-numeric-column Tukey outlier report: IQR fences and flagged counts.
+
+    Fences are ``q1 - k * iqr`` / ``q3 + k * iqr`` (Tukey's rule with
+    ``k=1.5`` by default); a value outside the fences counts as flagged.
+    Only numeric columns appear — pass ``columns`` to restrict which ones
+    are reported, matching :func:`spread`. Nulls are skipped when computing
+    fences and flags alike, so they inflate neither count nor rate (the
+    rate is over non-null values). An empty frame reports ``None`` for the
+    fences and zeros for the counts. Output is JSON-serialisable.
+    """
+    if columns is None:
+        columns = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    out = {}
+    for col in columns:
+        s = df[col]
+        if not pd.api.types.is_numeric_dtype(s):
+            continue
+        v = s.dropna()
+        if len(v):
+            q1 = float(v.quantile(0.25))
+            q3 = float(v.quantile(0.75))
+            iqr = q3 - q1
+            lower, upper = q1 - k * iqr, q3 + k * iqr
+            flagged = int(((v < lower) | (v > upper)).sum())
+        else:
+            lower, upper, flagged = None, None, 0
+        out[col] = {
+            "lower_fence": round(lower, 4) if lower is not None else None,
+            "upper_fence": round(upper, 4) if upper is not None else None,
+            "flagged": flagged,
+            "flag_rate": round(flagged / len(v), 4) if len(v) else 0.0,
+        }
+    return out
+
+
 def categories(df: pd.DataFrame, col: str, max_values: int | None = None) -> list:
     """Sorted unique non-null values of a column.
 
