@@ -3,7 +3,7 @@
 A small toolkit for cleaning and summarising CSV files with pandas. Handles the
 annoying real-world cases: dropping mostly-null rows, coercing strings like
 `$1,234` into numbers, deduping, per-column type profiling, and printing a
-compact summary or spread (min/q25/median/q75/max) report.
+compact summary, spread (min/q25/median/q75/max), or Tukey IQR outlier report.
 
 ## Install
 
@@ -41,6 +41,12 @@ csvtool spread data.csv --columns price qty --out reports/spread.json
 # --max caps the list and appends an … marker when it truncates)
 csvtool categories data.csv --column region
 csvtool categories data.csv --column region --max 10
+
+# Per-numeric-column Tukey IQR outlier report: q1 - k*iqr / q3 + k*iqr fences,
+# count and rate of values outside the fences (nulls skipped; --columns
+# restricts the report, --k loosens/tightens the fences)
+csvtool outlier data.csv
+csvtool outlier data.csv --columns price qty --k 3
 
 # Flag columns above a null-rate threshold (default 0.5) with drop/impute suggestions
 csvtool flag-nulls data.csv
