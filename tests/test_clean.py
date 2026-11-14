@@ -768,3 +768,48 @@ def test_outlier_cli_end_to_end(tmp_path, capsys):
     # -> fences 8.5 / 12.5; only the 90 is flagged
     assert got["price"]["upper_fence"] == 12.5 and got["price"]["lower_fence"] == 8.5
     assert got["price"]["flagged"] == 1
+
+
+def test_outlier_all_equal_values():
+    # zero iqr: fences collapse to the single value, strict inequalities flag nothing
+    out = outlier(pd.DataFrame({"x": [7, 7, 7, 7]}))
+    assert out["x"]["lower_fence"] == 7.0 and out["x"]["upper_fence"] == 7.0
+    assert out["x"]["flagged"] == 0
+
+
+def test_outlier_all_null_column():
+    # an all-null column arrives as object dtype from the CSV loader, so it is
+    # skipped outright (no numeric signal to fence); a float-dtype empty series
+    # instead reports None fences and zero flags
+    assert outlier(pd.DataFrame({"x": [None, None, None]})) == {}
+    s = pd.DataFrame({"x": pd.Series([1.0, None], dtype="float64")})
+    out = outlier(s)
+    assert out["x"]["flagged"] == 0 and out["x"]["flag_rate"] == 0.0
+
+
+def test_outlier_single_row():
+    # a lone value: q1 = q3 = the value, iqr = 0 -> no flags
+    out = outlier(pd.DataFrame({"x": [42]}))
+    assert out["x"]["lower_fence"] == 42.0 and out["x"]["upper_fence"] == 42.0
+    assert out["x"]["flagged"] == 0 and out["x"]["flag_rate"] == 0.0
+
+
+def test_outlier_empty_frame_header_only():
+    # a header-only frame with explicit numeric dtypes: every column reports
+    # None fences and zero flags, keeping the JSON shape stable
+    out = outlier(pd.DataFrame({"a": pd.Series(dtype="float64"), "b": pd.Series(dtype="float64")}))
+    assert out["a"]["lower_fence"] is None and out["a"]["upper_fence"] is None
+    assert out["a"]["flagged"] == 0 and out["b"]["flag_rate"] == 0.0
+
+
+def test_outlier_cli_columns_non_numeric_passthrough(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "mixed.csv"
+    # a wider score column so the spike actually clears the fences
+    f.write_text("id,tag,score\n1,a,1.0\n2,b,1.1\n3,a,1.2\n4,c,1.1\n5,b,1.0\n6,c,1.2\n7,a,9.5\n")
+    # --columns named after the non-numeric column is silently skipped (like spread)
+    main(["outlier", str(f), "--columns", "tag"])
+    assert json.loads(capsys.readouterr().out) == {}
+    # numeric columns are still reported when named explicitly
+    main(["outlier", str(f), "--columns", "score"])
+    assert json.loads(capsys.readouterr().out)["score"]["flagged"] == 1
