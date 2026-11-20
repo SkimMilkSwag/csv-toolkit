@@ -34,6 +34,24 @@ def top_categories(df: pd.DataFrame, col: str, n: int = 5) -> list:
     return df[col].value_counts().head(n).reset_index().values.tolist()
 
 
+def top(df: pd.DataFrame, col: str, n: int = 5) -> list:
+    """Top-n most frequent non-null values of ``col`` as ``{"value", "count"}`` dicts.
+
+    Same ranking as :func:`top_categories` (pandas ``value_counts`` ordering,
+    first-seen among equal counts), but nulls are dropped explicitly and the
+    output is JSON-serialisable — numpy scalars are converted to their Python
+    equivalents, so the CLI can pretty-print it directly. ``n`` caps the
+    list; a column with fewer distinct non-null values than that simply
+    reports them all, and an all-null (or empty) column reports nothing.
+    """
+    vc = df[col].dropna().value_counts().head(n)
+    out = []
+    for value, count in vc.items():
+        v = value.item() if hasattr(value, "item") else value
+        out.append({"value": v, "count": int(count)})
+    return out
+
+
 def _is_iso8601(value: str) -> bool:
     """Return True when ``value`` parses as an ISO 8601 date or datetime.
 

@@ -5,7 +5,7 @@ import os
 import sys
 
 from .clean import load, drop_null_rows, coerce_numbers, dedupe, sample
-from .stats import summary, profile, flag_sparse_columns, drop_const_columns, spread, outlier, categories
+from .stats import summary, profile, flag_sparse_columns, drop_const_columns, spread, outlier, categories, top
 
 
 def _emit(payload: str, out: str | None) -> None:
@@ -101,6 +101,16 @@ def main(argv=None):
                     help="write the report to PATH (.json pretty-prints; other extensions pass through) "
                          "instead of printing it")
 
+    tp = sub.add_parser("top", help="top-N most frequent values of a column as JSON")
+    tp.add_argument("file")
+    tp.add_argument("--column", required=True, metavar="COL",
+                    help="the column to rank by frequency")
+    tp.add_argument("-n", "--n", type=int, default=5, metavar="N",
+                    help="how many values to report (default 5)")
+    tp.add_argument("--out", metavar="PATH", default=None,
+                    help="write the report to PATH (.json pretty-prints; other extensions pass through) "
+                         "instead of printing it")
+
     args = p.parse_args(argv)
     if args.cmd == "summary":
         df = load(args.file)
@@ -140,6 +150,9 @@ def main(argv=None):
     elif args.cmd == "categories":
         df = load(args.file)
         _emit(_json_payload(categories(df, args.column, args.max)), args.out)
+    elif args.cmd == "top":
+        df = load(args.file)
+        _emit(_json_payload(top(df, args.column, args.n)), args.out)
     else:
         p.print_help()
 
