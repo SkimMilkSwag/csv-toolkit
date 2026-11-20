@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 import pandas as pd
 from csvtool.clean import drop_null_rows, coerce_numbers, dedupe, sample
-from csvtool.stats import profile, infer_type, summary, flag_sparse_columns, drop_const_columns, spread, outlier, categories
+from csvtool.stats import profile, infer_type, summary, flag_sparse_columns, drop_const_columns, spread, outlier, categories, top
 
 
 def test_drop_null_rows():
@@ -813,3 +813,85 @@ def test_outlier_cli_columns_non_numeric_passthrough(tmp_path, capsys):
     # numeric columns are still reported when named explicitly
     main(["outlier", str(f), "--columns", "score"])
     assert json.loads(capsys.readouterr().out)["score"]["flagged"] == 1
+
+
+# --- top -----------------------------------------------------------------------
+
+
+def test_top_ranks_by_frequency():
+    df = pd.DataFrame({"t": ["a", "b", "c", "a", "a", None, "b"]})
+    out = top(df, "t")
+    assert out == [
+        {"value": "a", "count": 3},
+        {"value": "b", "count": 2},
+        {"value": "c", "count": 1},
+    ]
+
+
+def test_top_nulls_excluded_from_counts():
+    df = pd.DataFrame({"t": [None, None, "x"]})
+    assert top(df, "t") == [{"value": "x", "count": 1}]
+    # an all-null column reports nothing
+    assert top(pd.DataFrame({"t": [None, None]}), "t") == []
+    # and so does an empty frame
+    assert top(pd.DataFrame({"t": []}), "t") == []
+
+
+def test_top_n_caps_and_reports_all_when_fewer():
+    df = pd.DataFrame({"t": ["a", "b", "c", "d", "e"]})
+    out = top(df, "t", n=2)
+    assert len(out) == 2
+    # every entry is still a real value with its count — no synthetic filler
+    assert all(e["count"] == 1 for e in out)
+    # fewer distinct values than n: the whole column comes back
+    small = pd.DataFrame({"t": ["a", "a", "b"]})
+    assert len(top(small, "t", n=10)) == 2
+
+
+def test_top_numeric_values_json_safe():
+    df = pd.DataFrame({"v": [1, 1, 2, 2, 2]})
+    out = top(df, "v")
+    # numpy scalars converted to plain Python ints, JSON-serialisable
+    assert out == [{"value": 2, "count": 3}, {"value": 1, "count": 2}]
+    json.dumps(out)
+
+
+def test_top_ties_keep_value_counts_order():
+    # equal counts fall back to first-seen order (pandas value_counts behaviour)
+    df = pd.DataFrame({"t": ["z", "m", "z", "m"]})
+    out = top(df, "t")
+    assert [e["value"] for e in out] == ["z", "m"]
+    assert all(e["count"] == 2 for e in out)
+
+
+def test_top_cli_end_to_end(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("id,t\n1,b\n2,a\n3,c\n4,a\n5,a\n6,b\n")
+    # default n=5 reports every value here, ranked by count
+    main(["top", str(f), "--column", "t"])
+    assert json.loads(capsys.readouterr().out) == [
+        {"value": "a", "count": 3},
+        {"value": "b", "count": 2},
+        {"value": "c", "count": 1},
+    ]
+    # -n caps the list
+    main(["top", str(f), "--column", "t", "-n", "2"])
+    assert json.loads(capsys.readouterr().out) == [
+        {"value": "a", "count": 3},
+        {"value": "b", "count": 2},
+    ]
+    # --out files the report, stdout stays empty
+    out_path = str(tmp_path / "top.json")
+    main(["top", str(f), "--column", "t", "--out", out_path])
+    assert capsys.readouterr().out == ""
+    assert json.load(open(out_path))[0] == {"value": "a", "count": 3}
+
+
+def test_top_cli_null_cells_ignored(tmp_path, capsys):
+    from csvtool.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("t\nx\n\ny\nx\n")
+    main(["top", str(f), "--column", "t"])
+    out = json.loads(capsys.readouterr().out)
+    assert out == [{"value": "x", "count": 2}, {"value": "y", "count": 1}]
