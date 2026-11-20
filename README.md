@@ -42,6 +42,11 @@ csvtool spread data.csv --columns price qty --out reports/spread.json
 csvtool categories data.csv --column region
 csvtool categories data.csv --column region --max 10
 
+# Top-N most frequent values of a column with their counts (nulls ignored;
+# -n controls how many to report, default 5)
+csvtool top data.csv --column status
+csvtool top data.csv --column status -n 3 --out reports/top.json
+
 # Per-numeric-column Tukey IQR outlier report: q1 - k*iqr / q3 + k*iqr fences,
 # count and rate of values outside the fences (nulls skipped; --columns
 # restricts the report, --k loosens/tightens the fences)
