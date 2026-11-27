@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 import pandas as pd
 from csvtool.clean import drop_null_rows, coerce_numbers, dedupe, sample
-from csvtool.stats import profile, infer_type, summary, flag_sparse_columns, drop_const_columns, spread, outlier, categories, top
+from csvtool.stats import profile, infer_type, summary, flag_sparse_columns, drop_const_columns, spread, outlier, categories, top, correlate
 
 
 def test_drop_null_rows():
@@ -895,3 +895,123 @@ def test_top_cli_null_cells_ignored(tmp_path, capsys):
     main(["top", str(f), "--column", "t"])
     out = json.loads(capsys.readouterr().out)
     assert out == [{"value": "x", "count": 2}, {"value": "y", "count": 1}]
+
+
+# --- correlate -----------------------------------------------------------------
+
+
+def test_correlate_perfect_positive():
+    df = pd.DataFrame({"a": [1, 2, 3, 4], "b": [2, 4, 6, 8]})
+    out = correlate(df)
+    assert out["a"]["b"] == 1.0 and out["b"]["a"] == 1.0
+    # diagonal is always exactly 1.0 — a column correlates with itself
+    assert out["a"]["a"] == 1.0 and out["b"]["b"] == 1.0
+
+
+def test_correlate_perfect_negative():
+    df = pd.DataFrame({"x": [1, 2, 3, 4, 5], "y": [5, 4, 3, 2, 1]})
+    assert correlate(df)["x"]["y"] == -1.0
+
+
+def test_correlate_rounds_to_four_decimals():
+    # a noisy linear relation: r is not exactly +/-1, and the JSON stays stable
+    df = pd.DataFrame({"a": [1, 2, 3, 4, 5, 6, 7], "b": [1.1, 2.05, 3.2, 3.9, 5.1, 6.05, 7.3]})
+    r = correlate(df)["a"]["b"]
+    assert abs(r - round(r, 4)) < 1e-9
+    assert 0.9 < r < 1.0
+
+
+def test_correlate_constant_column_reports_none():
+    # zero variance: pearson divides by zero -> undefined correlation
+    df = pd.DataFrame({"a": [1, 2, 3], "b": [5.0, 6.0, 7.0], "c": [9, 9, 9]})
+    out = correlate(df)
+    assert out["a"]["b"] is not None
+    assert out["a"]["c"] is None and out["c"]["b"] is None
+    # the constant column's own diagonal entry still reads 1.0
+    assert out["c"]["c"] == 1.0
+
+
+def test_correlate_all_null_column_reports_none():
+    # an all-null column carries no variance: its pairs are undefined and
+    # report None, while the diagonal still reads 1.0 (object dtype from a CSV
+    # loader is non-numeric and skipped by default, like outlier)
+    df = pd.DataFrame({"x": [1.0, 2.0, 3.0], "n": pd.Series([None, None, None], dtype="float64")})
+    out = correlate(df)
+    assert out["x"]["n"] is None and out["n"]["x"] is None
+    assert out["n"]["n"] == 1.0
+    # an all-null object-dtype column (the CSV shape) is skipped outright
+    assert "n" not in correlate(pd.DataFrame({"x": [1.0, 2.0], "n": [None, None]}))
+
+
+def test_correlate_nulls_handled_pairwise():
+    # each pair drops only its own missing rows; a null in one column does not
+    # poison the correlation of the other pairs
+    df = pd.DataFrame({"a": [1, 2, None, 4], "b": [1.0, 2.0, None, 4.0]})
+    assert correlate(df)["a"]["b"] == 1.0
+
+
+def test_correlate_non_numeric_columns_omitted_by_default():
+    df = pd.DataFrame({"x": [1.0, 2.0, 3.0], "name": ["p", "q", "r"]})
+    out = correlate(df)
+    assert set(out) == {"x"}
+
+
+def test_correlate_columns_restricts_matrix():
+    df = pd.DataFrame({"x": [1, 2, 3, 4], "y": [4, 3, 2, 1], "z": [10.5, 20.5, 30.5, 40.5]})
+    got = correlate(df, columns=["x", "y"])
+    assert set(got) == {"x", "y"}
+    # the excluded column does not leak in as a row or a key
+    assert "z" not in got and all("z" not in row for row in got.values())
+
+
+def test_correlate_columns_non_numeric_and_unknown_skipped():
+    df = pd.DataFrame({"x": [1.0, 2.0, 3.0], "name": ["a", "b", "c"]})
+    # non-numeric names are silently skipped (like spread/outlier), as are
+    # names that do not exist in the frame at all
+    assert correlate(df, columns=["name", "missing"]) == {}
+    got = correlate(df, columns=["name", "x"])
+    assert set(got) == {"x"}
+
+
+def test_correlate_single_row_matrix_is_none():
+    # one shared row: no variance to speak of for the pair -> None off-diagonal
+    out = correlate(pd.DataFrame({"a": [1.0], "b": [2.0]}))
+    assert out["a"]["b"] is None and out["a"]["a"] == 1.0
+
+
+def test_correlate_empty_frame_reports_only_diagonal():
+    df = pd.DataFrame({"a": pd.Series(dtype="float64"), "b": pd.Series(dtype="float64")})
+    out = correlate(df)
+    assert out["a"]["a"] == 1.0 and out["b"]["b"] == 1.0
+    assert out["a"]["b"] is None
+
+
+def test_correlate_output_is_json_serialisable():
+    df = pd.DataFrame({"a": [1, 2, 3], "b": [2.5, 4.5, 6.5], "c": ["x", "y", "z"]})
+    out = correlate(df)
+    json.dumps(out)
+
+
+def test_correlate_cli_end_to_end(tmp_path, capsys):
+    from csvtool.cli import main
+
+    f = tmp_path / "data.csv"
+    f.write_text("a,b,note\n1,2,x\n2,4,y\n3,6,z\n4,8,w\n")
+    main(["correlate", str(f)])
+    payload = json.loads(capsys.readouterr().out)
+    # the non-numeric note column is omitted; a and b are perfectly correlated
+    assert set(payload) == {"a", "b"}
+    assert payload["a"]["b"] == 1.0 and payload["b"]["a"] == 1.0
+    assert payload["a"]["a"] == 1.0
+
+    # --columns restricts the matrix to named columns
+    main(["correlate", str(f), "--columns", "a"])
+    got = json.loads(capsys.readouterr().out)
+    assert set(got) == {"a"} and got["a"]["a"] == 1.0
+
+    # --out files the report, stdout stays empty
+    out_path = str(tmp_path / "corr.json")
+    main(["correlate", str(f), "--out", out_path])
+    assert capsys.readouterr().out == ""
+    filed = json.load(open(out_path))
+    assert filed["a"]["b"] == 1.0
