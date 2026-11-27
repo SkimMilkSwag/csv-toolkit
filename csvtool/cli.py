@@ -5,7 +5,7 @@ import os
 import sys
 
 from .clean import load, drop_null_rows, coerce_numbers, dedupe, sample
-from .stats import summary, profile, flag_sparse_columns, drop_const_columns, spread, outlier, categories, top
+from .stats import summary, profile, flag_sparse_columns, drop_const_columns, spread, outlier, categories, top, correlate
 
 
 def _emit(payload: str, out: str | None) -> None:
@@ -91,6 +91,14 @@ def main(argv=None):
                     help="write the report to PATH (.json pretty-prints; other extensions pass through) "
                          "instead of printing it")
 
+    cr = sub.add_parser("correlate", help="pairwise Pearson correlations for the numeric columns as JSON")
+    cr.add_argument("file")
+    cr.add_argument("--columns", nargs="+", metavar="COL",
+                    help="restrict the matrix to these columns (default: all numeric columns)")
+    cr.add_argument("--out", metavar="PATH", default=None,
+                    help="write the report to PATH (.json pretty-prints; other extensions pass through) "
+                         "instead of printing it")
+
     ct = sub.add_parser("categories", help="sorted unique values of a column as JSON")
     ct.add_argument("file")
     ct.add_argument("--column", required=True, metavar="COL",
@@ -147,6 +155,9 @@ def main(argv=None):
     elif args.cmd == "outlier":
         df = load(args.file)
         _emit(_json_payload(outlier(df, args.columns, args.k)), args.out)
+    elif args.cmd == "correlate":
+        df = load(args.file)
+        _emit(_json_payload(correlate(df, args.columns)), args.out)
     elif args.cmd == "categories":
         df = load(args.file)
         _emit(_json_payload(categories(df, args.column, args.max)), args.out)

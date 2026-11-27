@@ -1,4 +1,5 @@
 """Quick descriptive stats for a DataFrame."""
+import math
 import re
 
 import pandas as pd
@@ -191,6 +192,50 @@ def outlier(df: pd.DataFrame, columns: list | None = None, k: float = 1.5) -> di
             "flagged": flagged,
             "flag_rate": round(flagged / len(v), 4) if len(v) else 0.0,
         }
+    return out
+
+
+def correlate(df: pd.DataFrame, columns: list | None = None) -> dict:
+    """Pairwise Pearson correlations for the numeric columns of ``df``.
+
+    Returns a symmetric matrix as nested dicts — ``{a: {b: r}}`` for every
+    ordered pair of distinct columns — rounded to 4 decimals so the JSON is
+    stable. Pairs are compared in column order with each column once, so the
+    upper triangle drives the values; the lower triangle mirrors it and each
+    column's own diagonal entry is ``1.0``. Nulls are handled pairwise (each
+    pair uses the rows where both columns have a value), so a sparse column
+    doesn't drag its correlations to null. A constant or all-null column has
+    an undefined correlation and reports ``None`` in its row.
+
+    Only numeric columns appear: by default that is every column pandas sees
+    as numeric (booleans included, since they carry a 0/1 signal); pass
+    ``columns`` to restrict the matrix to named columns, matching the
+    ``--columns`` behaviour of :func:`spread` and :func:`outlier`. Non-numeric
+    names in that list are silently skipped.
+    """
+    if columns is None:
+        columns = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    else:
+        columns = [c for c in columns if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
+
+    # constant (or all-null) columns have an undefined correlation: pearson
+    # divides by zero and reports NaN, so mark them up front
+    const = {col for col in columns if df[col].dropna().nunique(dropna=True) <= 1}
+
+    out = {col: {other: (1.0 if other == col else None) for other in columns} for col in columns}
+    for i, a in enumerate(columns):
+        for b in columns[i + 1 :]:
+            if a in const or b in const:
+                r = None
+            else:
+                v = df[[a, b]].dropna()
+                r = float(v[a].corr(v[b])) if len(v) > 1 else float("nan")
+                if r is not None and not math.isnan(r):
+                    r = round(r, 4)
+                else:
+                    r = None
+            out[a][b] = r
+            out[b][a] = r
     return out
 
 
